@@ -429,6 +429,10 @@ let allVideos = [];
 let activeYear = 'all';
 let searchQuery = '';
 
+function thumbError(img) {
+  img.parentElement.innerHTML = '<div class="thumb-placeholder"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>';
+}
+
 function formatDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -495,7 +499,7 @@ function renderGrid() {
     <div class="card" data-id="${v.id}">
       <div class="thumb-wrap">
         ${v.thumbnail
-          ? `<img src="${v.thumbnail}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=thumb-placeholder><svg width=40 height=40 viewBox=\\"0 0 24 24\\" fill=\\"none\\" stroke=\\"currentColor\\" stroke-width=\\"1.5\\"><polygon points=\\"5 3 19 12 5 21 5 3\\"/></svg></div>'">`
+          ? `<img src="${v.thumbnail}" alt="" loading="lazy" onerror="thumbError(this)">`
           : `<div class="thumb-placeholder"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`
         }
         ${v.duration ? `<span class="duration">${v.duration}</span>` : ''}
