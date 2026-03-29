@@ -9,13 +9,14 @@
 
     :root {
       --bg: #0f0f0f;
-      --surface: #1a1a1a;
-      --surface2: #242424;
-      --border: #2e2e2e;
+      --surface: #111827;
+      --surface2: #1e2535;
+      --border: #2a3347;
       --text: #e8e8e8;
-      --muted: #888;
-      --accent: #c8102e;
-      --accent-hover: #e01030;
+      --muted: #8896b0;
+      --accent: #2563b8;
+      --accent-hover: #1d4fa0;
+      --gold: #f5c842;
       --radius: 8px;
     }
 
@@ -28,12 +29,13 @@
 
     /* ── header ── */
     header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      background: linear-gradient(135deg, #0d1420 0%, #111827 60%, #0f1e38 100%);
+      border-bottom: 2px solid var(--gold);
       padding: 0 24px;
       position: sticky;
       top: 0;
       z-index: 100;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.5);
     }
     .header-inner {
       max-width: 1400px;
@@ -41,29 +43,45 @@
       display: flex;
       align-items: center;
       gap: 24px;
-      height: 64px;
+      height: 76px;
     }
     .logo {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 14px;
+      flex-shrink: 0;
+      text-decoration: none;
+    }
+    .logo img {
+      height: 52px;
+      width: auto;
+      display: block;
+      filter: drop-shadow(0 1px 4px rgba(0,0,0,0.4));
+    }
+    .logo-divider {
+      width: 1px;
+      height: 32px;
+      background: var(--border);
       flex-shrink: 0;
     }
-    .logo-badge {
-      background: var(--accent);
-      color: #fff;
-      font-weight: 800;
-      font-size: 15px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      letter-spacing: 0.5px;
-    }
     .logo-text {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
     }
-    .logo-text span { color: var(--muted); font-weight: 400; }
+    .logo-text-main {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.3px;
+    }
+    .logo-text-sub {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
 
     .search-wrap {
       flex: 1;
@@ -328,10 +346,10 @@
       transition: background 0.15s, opacity 0.15s;
     }
     .btn-primary {
-      background: var(--accent);
-      color: #fff;
+      background: var(--gold);
+      color: #111;
     }
-    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:hover { background: #e6b830; }
     .btn-secondary {
       background: var(--surface2);
       color: var(--text);
@@ -369,8 +387,12 @@
 <header>
   <div class="header-inner">
     <div class="logo">
-      <span class="logo-badge">WACS</span>
-      <span class="logo-text">Video Archive <span>· Alden CSD</span></span>
+      <img src="Wacs_Logo_RGB_Fill_M.png" alt="WACS">
+      <div class="logo-divider"></div>
+      <div class="logo-text">
+        <span class="logo-text-main">Video Archive</span>
+        <span class="logo-text-sub">Alden Central School District</span>
+      </div>
     </div>
     <div class="search-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
