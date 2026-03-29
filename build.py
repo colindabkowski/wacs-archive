@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""
+Generate videos.json for the WACS Archive viewer.
+
+- Fetches YouTube metadata (title, date, thumbnail, duration)
+- Gets SharePoint file IDs via rclone lsjson (one call)
+- Creates anonymous sharing links via Graph API $batch (20 at a time)
+- Matches YouTube videos to SharePoint files by normalized title
+- Outputs videos.json sorted newest-first
+"""
+
+import json
+import re
+import subprocess
+import unicodedata
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+ARCHIVE_FILE = Path(
+    "/Users/colindabkowski/Library/CloudStorage/"
+    "OneDrive-AldenCentralSchoolDistrict/"
+    "General - ACSD-Multimedia Production/WACS Archive/.yt-dlp-archive.txt"
+)
+API_KEY = "AIzaSyCWwClssYLri4CZOTbaPOPU_F8EQekQcGQ"
+OUTPUT = Path(__file__).parent / "videos.json"
+RCLONE_CONF = Path.home() / ".config/rclone/rclone.conf"
+GRAPH_BATCH = "https://graph.microsoft.com/v1.0/$batch"
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def normalize(s: str) -> str:
+    s = unicodedata.normalize("NFKC", s)
+    s = s.lower()
+    s = re.sub(r"[^\w\s]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def parse_duration(iso: str) -> str:
+    m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso)
+    if not m:
+        return ""
+    h, mi, s = (int(x or 0) for x in m.groups())
+    if h:
+        return f"{h}:{mi:02d}:{s:02d}"
+    return f"{mi}:{s:02d}"
+
+
+def api_get(url: str, token: str = None) -> dict:
+    req = urllib.request.Request(url)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+def api_post(url: str, body: dict, token: str) -> dict:
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+# ── step 1: load video IDs ────────────────────────────────────────────────────
+
+def load_video_ids() -> list[str]:
+    ids = []
+    for line in ARCHIVE_FILE.read_text().splitlines():
+        parts = line.strip().split()
+        if len(parts) == 2 and parts[0] == "youtube":
+            ids.append(parts[1])
+    return ids
+
+
+# ── step 2: fetch YouTube metadata ───────────────────────────────────────────
+
+def fetch_youtube_metadata(video_ids: list[str]) -> list[dict]:
+    videos = []
+    for i in range(0, len(video_ids), 50):
+        batch = video_ids[i : i + 50]
+        url = (
+            "https://www.googleapis.com/youtube/v3/videos"
+            f"?part=snippet,contentDetails&id={','.join(batch)}&key={API_KEY}"
+        )
+        data = api_get(url)
+        for item in data.get("items", []):
+            snippet = item["snippet"]
+            thumb = snippet.get("thumbnails", {})
+            thumb_url = (
+                thumb.get("maxres", {}).get("url")
+                or thumb.get("high", {}).get("url")
+                or thumb.get("medium", {}).get("url", "")
+            )
+            videos.append({
+                "id": item["id"],
+                "title": snippet.get("title", ""),
+                "date": snippet.get("publishedAt", "")[:10],
+                "thumbnail": thumb_url,
+                "description": snippet.get("description", "")[:400].strip(),
+                "duration": parse_duration(item["contentDetails"].get("duration", "")),
+                "_norm": normalize(snippet.get("title", "")),
+            })
+        print(f"  YouTube API: {min(i+50, len(video_ids))}/{len(video_ids)}", flush=True)
+    return videos
+
+
+# ── step 3: get access token (refresh via rclone if needed) ──────────────────
+
+def get_access_token() -> str:
+    """Run a harmless rclone command to ensure token is fresh, then read it."""
+    subprocess.run(
+        ["rclone", "about", "onedrive:"],
+        capture_output=True, text=True
+    )
+    conf = RCLONE_CONF.read_text()
+    m = re.search(r'\[onedrive\].*?token\s*=\s*(\{.*?\})', conf, re.DOTALL)
+    if not m:
+        raise RuntimeError("Could not find onedrive token in rclone config")
+    token_data = json.loads(m.group(1))
+    return token_data["access_token"]
+
+
+# ── step 4: list SharePoint files via rclone lsjson ──────────────────────────
+
+def list_sharepoint_files() -> list[dict]:
+    """Returns list of {name, id} for all mp4s in WACS Archive."""
+    result = subprocess.run(
+        ["rclone", "lsjson", "onedrive:WACS Archive", "--files-only"],
+        capture_output=True, text=True
+    )
+    items = json.loads(result.stdout)
+    return [{"name": x["Name"], "id": x["ID"].split("#")[-1]} for x in items if x["Name"].endswith(".mp4")]
+
+
+# ── step 5: create sharing links via Graph API $batch ────────────────────────
+
+def create_sharing_links(files: list[dict], token: str, drive_id: str) -> dict[str, str]:
+    """Returns {filename: share_url} for all files."""
+    links = {}
+    batch_size = 20
+    total = len(files)
+
+    for i in range(0, total, batch_size):
+        batch = files[i : i + batch_size]
+        requests = [
+            {
+                "id": str(j),
+                "method": "POST",
+                "url": f"/drives/{drive_id}/items/{f['id']}/createLink",
+                "headers": {"Content-Type": "application/json"},
+                "body": {"type": "view", "scope": "anonymous"},
+            }
+            for j, f in enumerate(batch)
+        ]
+        try:
+            resp = api_post(GRAPH_BATCH, {"requests": requests}, token)
+        except urllib.error.HTTPError as e:
+            print(f"  Batch error at {i}: {e.code} {e.read()[:200]}", flush=True)
+            continue
+
+        for r in resp.get("responses", []):
+            idx = int(r["id"])
+            if r["status"] in (200, 201):
+                url = r["body"].get("link", {}).get("webUrl", "")
+                if url:
+                    links[batch[idx]["name"]] = url + "?download=1"
+            else:
+                print(f"  Warning: link creation failed for {batch[idx]['name']}: {r['status']}", flush=True)
+
+        done = min(i + batch_size, total)
+        print(f"  SharePoint links: {done}/{total}", flush=True)
+
+    return links
+
+
+# ── step 6: match YouTube videos to SharePoint files ─────────────────────────
+
+def extract_title_from_stem(stem: str) -> str:
+    stem = re.sub(r"^\d{4}\.\d{2}\.\d{2}\s*", "", stem)
+    return stem.strip()
+
+
+def match_and_merge(yt_videos: list[dict], sp_links: dict[str, str]) -> list[dict]:
+    sp_index = {}
+    for filename, url in sp_links.items():
+        title = extract_title_from_stem(Path(filename).stem)
+        key = normalize(title)
+        if key:
+            sp_index[key] = {"filename": filename, "download_url": url}
+
+    results = []
+    unmatched = 0
+    for v in yt_videos:
+        sp = sp_index.get(v["_norm"])
+        results.append({
+            "id": v["id"],
+            "title": v["title"],
+            "date": v["date"],
+            "thumbnail": v["thumbnail"],
+            "description": v["description"],
+            "duration": v["duration"],
+            "download_url": sp["download_url"] if sp else "",
+            "filename": sp["filename"] if sp else "",
+        })
+        if not sp:
+            unmatched += 1
+
+    results.sort(key=lambda v: v["date"], reverse=True)
+    matched = len(results) - unmatched
+    print(f"  Matched {matched}/{len(results)} videos to SharePoint files", flush=True)
+    if unmatched:
+        print(f"  {unmatched} videos have no SharePoint match (deleted/private on YouTube)", flush=True)
+    return results
+
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    print("1/5  Loading video IDs from archive...")
+    ids = load_video_ids()
+    print(f"     {len(ids)} IDs found\n", flush=True)
+
+    print("2/5  Fetching YouTube metadata...")
+    yt_videos = fetch_youtube_metadata(ids)
+    print(f"     {len(yt_videos)} videos fetched\n", flush=True)
+
+    print("3/5  Refreshing access token via rclone...")
+    token = get_access_token()
+    print("     Token ready\n", flush=True)
+
+    print("4/5  Listing SharePoint files...")
+    sp_files = list_sharepoint_files()
+    print(f"     {len(sp_files)} files found\n", flush=True)
+
+    # Extract drive_id from rclone config
+    conf = RCLONE_CONF.read_text()
+    m = re.search(r'drive_id\s*=\s*(\S+)', conf)
+    drive_id = m.group(1) if m else ""
+
+    print("5/5  Creating sharing links via Graph API batch...")
+    sp_links = create_sharing_links(sp_files, token, drive_id)
+    print(f"     {len(sp_links)} links created\n", flush=True)
+
+    print("6/6  Matching and merging...")
+    videos = match_and_merge(yt_videos, sp_links)
+
+    OUTPUT.write_text(json.dumps(videos, indent=2, ensure_ascii=False))
+    print(f"\nDone. Wrote {len(videos)} videos to {OUTPUT}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

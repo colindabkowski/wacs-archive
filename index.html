@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WACS Archive</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: #2e2e2e;
+      --text: #e8e8e8;
+      --muted: #888;
+      --accent: #c8102e;
+      --accent-hover: #e01030;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      height: 64px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .logo-badge {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 800;
+      font-size: 15px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .logo-text {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .logo-text span { color: var(--muted); font-weight: 400; }
+
+    .search-wrap {
+      flex: 1;
+      max-width: 480px;
+      position: relative;
+    }
+    .search-wrap svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+    }
+    #search {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 8px 16px 8px 38px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #search:focus { border-color: var(--accent); }
+    #search::placeholder { color: var(--muted); }
+
+    .stats {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* ── filters ── */
+    .filters {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .filters-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 48px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .filters-inner::-webkit-scrollbar { display: none; }
+    .filter-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+      margin-right: 4px;
+    }
+    .year-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 4px 12px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .year-btn:hover { border-color: var(--text); color: var(--text); }
+    .year-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── main grid ── */
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      border: 1px solid var(--border);
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      border-color: #444;
+    }
+    .thumb-wrap {
+      position: relative;
+      aspect-ratio: 16/9;
+      background: #111;
+      overflow: hidden;
+    }
+    .thumb-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .thumb-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface2);
+    }
+    .thumb-placeholder svg { color: var(--muted); opacity: 0.4; }
+    .duration {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0);
+      transition: background 0.15s;
+    }
+    .card:hover .play-overlay { background: rgba(0,0,0,0.35); }
+    .play-icon {
+      width: 48px;
+      height: 48px;
+      background: rgba(255,255,255,0.9);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .card:hover .play-icon { opacity: 1; transform: scale(1); }
+    .play-icon svg { color: #111; margin-left: 3px; }
+
+    .card-body { padding: 12px 14px 14px; }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .card-date {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── empty state ── */
+    #empty {
+      display: none;
+      text-align: center;
+      padding: 80px 24px;
+      color: var(--muted);
+    }
+    #empty svg { margin-bottom: 16px; opacity: 0.3; }
+    #empty h3 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+
+    /* ── modal ── */
+    #modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    #modal-backdrop.open { display: flex; }
+
+    #modal {
+      background: var(--surface);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 860px;
+      max-height: 90vh;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      animation: modal-in 0.2s ease;
+    }
+    @keyframes modal-in {
+      from { opacity: 0; transform: scale(0.96); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    .embed-wrap {
+      position: relative;
+      aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+    }
+    .embed-wrap iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .modal-body { padding: 20px 24px 24px; }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+    .modal-meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .modal-desc {
+      font-size: 13px;
+      color: #aaa;
+      line-height: 1.6;
+      margin-bottom: 20px;
+      white-space: pre-line;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: #2e2e2e; }
+    .btn-close {
+      margin-left: auto;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .btn-close:hover { color: var(--text); background: var(--surface2); }
+
+    /* ── loading ── */
+    #loading {
+      text-align: center;
+      padding: 80px 24px;
+      color: var(--muted);
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-badge">WACS</span>
+      <span class="logo-text">Video Archive <span>· Alden CSD</span></span>
+    </div>
+    <div class="search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="search" type="search" placeholder="Search videos…" autocomplete="off">
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+</header>
+
+<div class="filters">
+  <div class="filters-inner" id="year-filters">
+    <span class="filter-label">Year</span>
+  </div>
+</div>
+
+<main>
+  <div id="loading">
+    <div class="spinner"></div>
+    Loading archive…
+  </div>
+  <div id="grid"></div>
+  <div id="empty">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <h3>No videos found</h3>
+    <p>Try a different search or year filter.</p>
+  </div>
+</main>
+
+<!-- modal -->
+<div id="modal-backdrop">
+  <div id="modal">
+    <div class="embed-wrap">
+      <iframe id="yt-embed" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
+    </div>
+    <div class="modal-body">
+      <div class="modal-title" id="modal-title"></div>
+      <div class="modal-meta" id="modal-meta"></div>
+      <div class="modal-desc" id="modal-desc"></div>
+      <div class="modal-actions">
+        <a id="btn-download" class="btn btn-primary" href="#" download>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </a>
+        <a id="btn-youtube" class="btn btn-secondary" href="#" target="_blank" rel="noopener">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.75 15.5v-7l6.25 3.5-6.25 3.5z"/></svg>
+          Watch on YouTube
+        </a>
+        <button class="btn btn-close" id="btn-close">✕ Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allVideos = [];
+let activeYear = 'all';
+let searchQuery = '';
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[+m - 1]} ${+d}, ${y}`;
+}
+
+function getYear(iso) {
+  return iso ? iso.slice(0, 4) : '';
+}
+
+function filteredVideos() {
+  return allVideos.filter(v => {
+    const matchYear = activeYear === 'all' || getYear(v.date) === activeYear;
+    const q = searchQuery.toLowerCase();
+    const matchSearch = !q || v.title.toLowerCase().includes(q);
+    return matchYear && matchSearch;
+  });
+}
+
+function renderYearFilters() {
+  const years = [...new Set(allVideos.map(v => getYear(v.date)).filter(Boolean))].sort().reverse();
+  const container = document.getElementById('year-filters');
+  const allBtn = document.createElement('button');
+  allBtn.className = 'year-btn active';
+  allBtn.textContent = 'All';
+  allBtn.dataset.year = 'all';
+  allBtn.addEventListener('click', () => setYear('all'));
+  container.appendChild(allBtn);
+  for (const y of years) {
+    const btn = document.createElement('button');
+    btn.className = 'year-btn';
+    btn.textContent = y;
+    btn.dataset.year = y;
+    btn.addEventListener('click', () => setYear(y));
+    container.appendChild(btn);
+  }
+}
+
+function setYear(year) {
+  activeYear = year;
+  document.querySelectorAll('.year-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.year === year);
+  });
+  renderGrid();
+}
+
+function renderGrid() {
+  const videos = filteredVideos();
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  const stats = document.getElementById('stats');
+
+  stats.textContent = `${videos.length.toLocaleString()} video${videos.length !== 1 ? 's' : ''}`;
+
+  if (videos.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  grid.innerHTML = videos.map(v => `
+    <div class="card" data-id="${v.id}">
+      <div class="thumb-wrap">
+        ${v.thumbnail
+          ? `<img src="${v.thumbnail}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=thumb-placeholder><svg width=40 height=40 viewBox=\\"0 0 24 24\\" fill=\\"none\\" stroke=\\"currentColor\\" stroke-width=\\"1.5\\"><polygon points=\\"5 3 19 12 5 21 5 3\\"/></svg></div>'">`
+          : `<div class="thumb-placeholder"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`
+        }
+        ${v.duration ? `<span class="duration">${v.duration}</span>` : ''}
+        <div class="play-overlay">
+          <div class="play-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">${escHtml(v.title)}</div>
+        <div class="card-date">${formatDate(v.date)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', () => openModal(card.dataset.id));
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openModal(videoId) {
+  const v = allVideos.find(x => x.id === videoId);
+  if (!v) return;
+  document.getElementById('yt-embed').src = `https://www.youtube.com/embed/${v.id}?autoplay=1`;
+  document.getElementById('modal-title').textContent = v.title;
+  document.getElementById('modal-meta').textContent = formatDate(v.date) + (v.duration ? ` · ${v.duration}` : '');
+  document.getElementById('modal-desc').textContent = v.description || '';
+  const dlBtn = document.getElementById('btn-download');
+  if (v.download_url) {
+    dlBtn.href = v.download_url;
+    dlBtn.style.display = '';
+  } else {
+    dlBtn.style.display = 'none';
+  }
+  document.getElementById('btn-youtube').href = `https://www.youtube.com/watch?v=${v.id}`;
+  document.getElementById('modal-backdrop').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+  document.getElementById('yt-embed').src = '';
+  document.body.style.overflow = '';
+}
+
+// events
+document.getElementById('btn-close').addEventListener('click', closeModal);
+document.getElementById('modal-backdrop').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-backdrop')) closeModal();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+let searchTimer;
+document.getElementById('search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchQuery = e.target.value.trim();
+    renderGrid();
+  }, 150);
+});
+
+// init
+fetch('videos.json')
+  .then(r => r.json())
+  .then(data => {
+    allVideos = data;
+    document.getElementById('loading').style.display = 'none';
+    renderYearFilters();
+    renderGrid();
+  })
+  .catch(() => {
+    document.getElementById('loading').innerHTML = '<p style="color:#c8102e">Failed to load videos.json. Run build.py first.</p>';
+  });
+</script>
+</body>
+</html>
