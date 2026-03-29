@@ -109,20 +109,19 @@ def fetch_youtube_metadata(video_ids: list[str]) -> list[dict]:
     return videos
 
 
-# ── step 3: get access token (refresh via rclone if needed) ──────────────────
+# ── step 3: list SharePoint files + read token from (now-refreshed) config ───
 
-def get_access_token() -> str:
-    """Run a harmless rclone command to ensure token is fresh, then read it."""
-    subprocess.run(
-        ["rclone", "about", "onedrive:"],
-        capture_output=True, text=True
-    )
+def read_rclone_config() -> tuple[str, str]:
+    """Return (access_token, drive_id) from rclone config in one read.
+    Call after rclone lsjson so the token is guaranteed fresh."""
     conf = RCLONE_CONF.read_text()
     m = re.search(r'\[onedrive\].*?token\s*=\s*(\{.*?\})', conf, re.DOTALL)
     if not m:
         raise RuntimeError("Could not find onedrive token in rclone config")
-    token_data = json.loads(m.group(1))
-    return token_data["access_token"]
+    token = json.loads(m.group(1))["access_token"]
+    dm = re.search(r'drive_id\s*=\s*(\S+)', conf)
+    drive_id = dm.group(1) if dm else ""
+    return token, drive_id
 
 
 # ── step 4: list SharePoint files via rclone lsjson ──────────────────────────
@@ -223,7 +222,7 @@ def create_sharing_links(files: list[dict], token: str, drive_id: str) -> dict[s
                     single = api_post(GRAPH_BATCH, {"requests": [{"id": "0", "method": "POST", "url": f"/drives/{drive_id}/items/{f['id']}/createLink", "headers": {"Content-Type": "application/json"}, "body": {"type": "view", "scope": "anonymous"}}]}, token)
                     url = single["responses"][0].get("body", {}).get("link", {}).get("webUrl", "")
                     if url:
-                        links[f["name"]] = url + "?download=1"
+                        links[f["name"]] = _to_direct_download(url)
                 except Exception:
                     pass
 
@@ -302,24 +301,17 @@ def main():
         yt_videos = fetch_youtube_metadata(ids)
         print(f"     {len(yt_videos)} videos fetched\n", flush=True)
 
-    print("3/5  Refreshing access token via rclone...")
-    token = get_access_token()
-    print("     Token ready\n", flush=True)
-
-    print("4/5  Listing SharePoint files...")
+    print("3/5  Listing SharePoint files (refreshes OAuth token as side effect)...")
     sp_files = list_sharepoint_files()
     print(f"     {len(sp_files)} files found\n", flush=True)
 
-    # Extract drive_id from rclone config
-    conf = RCLONE_CONF.read_text()
-    m = re.search(r'drive_id\s*=\s*(\S+)', conf)
-    drive_id = m.group(1) if m else ""
+    token, drive_id = read_rclone_config()
 
-    print("5/5  Creating sharing links via Graph API batch...")
+    print("4/5  Creating sharing links via Graph API batch...")
     sp_links = create_sharing_links(sp_files, token, drive_id)
-    print(f"     {len(sp_links)} links created\n", flush=True)
+    print(f"     {len(sp_links)} links ready\n", flush=True)
 
-    print("6/6  Matching and merging...")
+    print("5/5  Matching and merging...")
     videos = match_and_merge(yt_videos, sp_links)
 
     OUTPUT.write_text(json.dumps(videos, indent=2, ensure_ascii=False))
