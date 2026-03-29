@@ -288,7 +288,15 @@ def main():
         yt_videos = json.loads(OUTPUT.read_text())
         for v in yt_videos:
             v["_norm"] = normalize(v["title"])
-        print(f"     {len(yt_videos)} videos loaded\n", flush=True)
+        existing_ids = {v["id"] for v in yt_videos}
+        new_ids = [vid_id for vid_id in ids if vid_id not in existing_ids]
+        if new_ids:
+            print(f"     {len(new_ids)} new IDs found — fetching from YouTube API...", flush=True)
+            new_videos = fetch_youtube_metadata(new_ids)
+            yt_videos.extend(new_videos)
+            print(f"     Total: {len(yt_videos)} videos\n", flush=True)
+        else:
+            print(f"     {len(yt_videos)} videos loaded (no new IDs)\n", flush=True)
     else:
         print("2/5  Fetching YouTube metadata...")
         yt_videos = fetch_youtube_metadata(ids)
