@@ -12,6 +12,7 @@ Generate videos.json for the WACS Archive viewer.
 import json
 import re
 import subprocess
+import time
 import unicodedata
 import urllib.request
 import urllib.error
@@ -24,6 +25,7 @@ ARCHIVE_FILE = Path(
 )
 API_KEY = "AIzaSyCWwClssYLri4CZOTbaPOPU_F8EQekQcGQ"
 OUTPUT = Path(__file__).parent / "videos.json"
+LINKS_CACHE = Path(__file__).parent / "links_cache.json"
 RCLONE_CONF = Path.home() / ".config/rclone/rclone.conf"
 GRAPH_BATCH = "https://graph.microsoft.com/v1.0/$batch"
 
@@ -137,14 +139,42 @@ def list_sharepoint_files() -> list[dict]:
 
 # ── step 5: create sharing links via Graph API $batch ────────────────────────
 
+def _to_direct_download(url: str) -> str:
+    """Convert a SharePoint share URL to a direct download link."""
+    if not url:
+        return url
+    url = url.replace("?download=1", "")
+    parts = url.split("/")
+    # Expected: https://liveedualdenschools.sharepoint.com/:v:/g/personal/USER/TOKEN
+    # Target:   https://liveedualdenschools.sharepoint.com/personal/USER/_layouts/15/download.aspx?share=TOKEN
+    if len(parts) < 7 or "/_layouts/" in url:
+        return url
+    domain = parts[0] + "//" + parts[2]
+    token = parts[-1]
+    user_path = parts[5] + "/" + parts[6]
+    return f"{domain}/{user_path}/_layouts/15/download.aspx?share={token}"
+
+
 def create_sharing_links(files: list[dict], token: str, drive_id: str) -> dict[str, str]:
-    """Returns {filename: share_url} for all files."""
+    """Returns {filename: share_url} for all files. Caches results to avoid re-requesting."""
+    # Load existing cache
     links = {}
+    if LINKS_CACHE.exists():
+        links = json.loads(LINKS_CACHE.read_text())
+        print(f"  Loaded {len(links)} cached links", flush=True)
+
+    # Only process files not already cached
+    todo = [f for f in files if f["name"] not in links]
+    if not todo:
+        print("  All links already cached.", flush=True)
+        return links
+
+    print(f"  {len(todo)} files need links generated...", flush=True)
     batch_size = 20
-    total = len(files)
+    total = len(todo)
 
     for i in range(0, total, batch_size):
-        batch = files[i : i + batch_size]
+        batch = todo[i : i + batch_size]
         requests = [
             {
                 "id": str(j),
@@ -155,23 +185,53 @@ def create_sharing_links(files: list[dict], token: str, drive_id: str) -> dict[s
             }
             for j, f in enumerate(batch)
         ]
-        try:
-            resp = api_post(GRAPH_BATCH, {"requests": requests}, token)
-        except urllib.error.HTTPError as e:
-            print(f"  Batch error at {i}: {e.code} {e.read()[:200]}", flush=True)
+        retry = 0
+        while retry < 5:
+            try:
+                resp = api_post(GRAPH_BATCH, {"requests": requests}, token)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    wait = 10 * (2 ** retry)
+                    print(f"  Rate limited, waiting {wait}s...", flush=True)
+                    time.sleep(wait)
+                    retry += 1
+                else:
+                    print(f"  Batch error at {i}: {e.code}", flush=True)
+                    break
+        else:
+            print(f"  Skipping batch at {i} after max retries", flush=True)
             continue
 
+        retry_items = []
         for r in resp.get("responses", []):
             idx = int(r["id"])
             if r["status"] in (200, 201):
                 url = r["body"].get("link", {}).get("webUrl", "")
                 if url:
-                    links[batch[idx]["name"]] = url + "?download=1"
+                    links[batch[idx]["name"]] = _to_direct_download(url)
+            elif r["status"] == 429:
+                retry_items.append(batch[idx])
             else:
-                print(f"  Warning: link creation failed for {batch[idx]['name']}: {r['status']}", flush=True)
+                print(f"  Warning: {batch[idx]['name']}: {r['status']}", flush=True)
+
+        # Retry individual 429s with backoff
+        if retry_items:
+            time.sleep(5)
+            for f in retry_items:
+                try:
+                    single = api_post(GRAPH_BATCH, {"requests": [{"id": "0", "method": "POST", "url": f"/drives/{drive_id}/items/{f['id']}/createLink", "headers": {"Content-Type": "application/json"}, "body": {"type": "view", "scope": "anonymous"}}]}, token)
+                    url = single["responses"][0].get("body", {}).get("link", {}).get("webUrl", "")
+                    if url:
+                        links[f["name"]] = url + "?download=1"
+                except Exception:
+                    pass
+
+        # Save cache after every batch
+        LINKS_CACHE.write_text(json.dumps(links))
 
         done = min(i + batch_size, total)
-        print(f"  SharePoint links: {done}/{total}", flush=True)
+        print(f"  SharePoint links: {done}/{total} ({len(links)} total)", flush=True)
 
     return links
 
@@ -223,9 +283,16 @@ def main():
     ids = load_video_ids()
     print(f"     {len(ids)} IDs found\n", flush=True)
 
-    print("2/5  Fetching YouTube metadata...")
-    yt_videos = fetch_youtube_metadata(ids)
-    print(f"     {len(yt_videos)} videos fetched\n", flush=True)
+    if OUTPUT.exists():
+        print("2/5  Loading cached YouTube metadata from videos.json...")
+        yt_videos = json.loads(OUTPUT.read_text())
+        for v in yt_videos:
+            v["_norm"] = normalize(v["title"])
+        print(f"     {len(yt_videos)} videos loaded\n", flush=True)
+    else:
+        print("2/5  Fetching YouTube metadata...")
+        yt_videos = fetch_youtube_metadata(ids)
+        print(f"     {len(yt_videos)} videos fetched\n", flush=True)
 
     print("3/5  Refreshing access token via rclone...")
     token = get_access_token()
