@@ -117,7 +117,36 @@
       flex-shrink: 0;
     }
 
-    /* ── filters ── */
+    /* ── section tabs ── */
+    .section-tabs {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .section-tabs-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      height: 44px;
+      align-items: stretch;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 0 22px;
+      cursor: pointer;
+      flex-shrink: 0;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+    /* ── year filters ── */
     .filters {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
@@ -402,6 +431,10 @@
   </div>
 </header>
 
+<div class="section-tabs">
+  <div class="section-tabs-inner" id="section-tabs"></div>
+</div>
+
 <div class="filters">
   <div class="filters-inner" id="year-filters">
     <span class="filter-label">Year</span>
@@ -448,6 +481,7 @@
 
 <script>
 let allVideos = [];
+let activeSection = 'archive';
 let activeYear = 'all';
 let searchQuery = '';
 
@@ -466,8 +500,13 @@ function getYear(iso) {
   return iso ? iso.slice(0, 4) : '';
 }
 
+function getSectionVideos() {
+  if (activeSection === 'daily') return allVideos.filter(v => v.section === 'daily');
+  return allVideos.filter(v => v.section !== 'daily');
+}
+
 function filteredVideos() {
-  return allVideos.filter(v => {
+  return getSectionVideos().filter(v => {
     const matchYear = activeYear === 'all' || getYear(v.date) === activeYear;
     const q = searchQuery.toLowerCase();
     const matchSearch = !q || v.title.toLowerCase().includes(q);
@@ -475,9 +514,40 @@ function filteredVideos() {
   });
 }
 
+function renderSectionTabs() {
+  const archiveCount = allVideos.filter(v => v.section !== 'daily').length;
+  const dailyCount = allVideos.filter(v => v.section === 'daily').length;
+  const tabs = [
+    { section: 'archive', label: `Archive` },
+    { section: 'daily',   label: `WACS Daily` },
+  ];
+  const container = document.getElementById('section-tabs');
+  container.innerHTML = '';
+  for (const { section, label } of tabs) {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (section === activeSection ? ' active' : '');
+    btn.dataset.section = section;
+    btn.textContent = label;
+    btn.addEventListener('click', () => setSection(section));
+    container.appendChild(btn);
+  }
+}
+
+function setSection(section) {
+  activeSection = section;
+  activeYear = 'all';
+  searchQuery = '';
+  document.getElementById('search').value = '';
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.section === section));
+  renderYearFilters();
+  renderGrid();
+}
+
 function renderYearFilters() {
-  const years = [...new Set(allVideos.map(v => getYear(v.date)).filter(Boolean))].sort().reverse();
+  const years = [...new Set(getSectionVideos().map(v => getYear(v.date)).filter(Boolean))].sort().reverse();
   const container = document.getElementById('year-filters');
+  container.innerHTML = '<span class="filter-label">Year</span>';
   const allBtn = document.createElement('button');
   allBtn.className = 'year-btn active';
   allBtn.textContent = 'All';
@@ -594,6 +664,7 @@ fetch('videos.json')
   .then(data => {
     allVideos = data;
     document.getElementById('loading').style.display = 'none';
+    renderSectionTabs();
     renderYearFilters();
     renderGrid();
   })
