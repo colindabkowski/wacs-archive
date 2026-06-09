@@ -29,6 +29,8 @@ GRAPH_BATCH = "https://graph.microsoft.com/v1.0/$batch"
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def normalize(s: str) -> str:
+    import html
+    s = html.unescape(s)
     s = unicodedata.normalize("NFKC", s)
     s = s.lower()
     s = re.sub(r"[^\w\s]", " ", s)
