@@ -18,11 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-ARCHIVE_FILE = Path(
-    "/Users/colindabkowski/Library/CloudStorage/"
-    "OneDrive-AldenCentralSchoolDistrict/"
-    "General - ACSD-Multimedia Production/WACS Archive/.yt-dlp-archive.txt"
-)
+ARCHIVE_FILE = Path("/Users/colindabkowski/scripts/.yt-dlp-archive.txt")
 API_KEY = "AIzaSyCWwClssYLri4CZOTbaPOPU_F8EQekQcGQ"
 OUTPUT = Path(__file__).parent / "videos.json"
 LINKS_CACHE = Path(__file__).parent / "links_cache.json"
@@ -129,7 +125,7 @@ def read_rclone_config() -> tuple[str, str]:
 def list_sharepoint_files() -> list[dict]:
     """Returns list of {name, id} for all mp4s in WACS Archive."""
     result = subprocess.run(
-        ["rclone", "lsjson", "onedrive:WACS Archive", "--files-only"],
+        ["/opt/homebrew/bin/rclone", "lsjson", "onedrive:WACS Archive", "--files-only"],
         capture_output=True, text=True
     )
     items = json.loads(result.stdout)
@@ -239,6 +235,7 @@ def create_sharing_links(files: list[dict], token: str, drive_id: str) -> dict[s
 
 def extract_title_from_stem(stem: str) -> str:
     stem = re.sub(r"^\d{4}\.\d{2}\.\d{2}\s*", "", stem)
+    stem = re.sub(r"\.f\d+$", "", stem)  # strip yt-dlp format suffix (.f137 etc)
     return stem.strip()
 
 
@@ -263,6 +260,7 @@ def match_and_merge(yt_videos: list[dict], sp_links: dict[str, str]) -> list[dic
             "duration": v["duration"],
             "download_url": sp["download_url"] if sp else "",
             "filename": sp["filename"] if sp else "",
+            "section": "daily" if v["title"].lower().startswith("wacs daily") else "archive",
         })
         if not sp:
             unmatched += 1
