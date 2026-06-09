@@ -125,7 +125,7 @@ def read_rclone_config() -> tuple[str, str]:
 def list_sharepoint_files() -> list[dict]:
     """Returns list of {name, id} for all mp4s in WACS Archive."""
     result = subprocess.run(
-        ["/opt/homebrew/bin/rclone", "lsjson", "onedrive:WACS Archive", "--files-only"],
+        ["/opt/homebrew/bin/rclone", "lsjson", "onedrive:General - ACSD-Multimedia Production/WACS Archive", "--files-only"],
         capture_output=True, text=True
     )
     items = json.loads(result.stdout)
